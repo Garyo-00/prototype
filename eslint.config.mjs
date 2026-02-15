@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Reference prototype source (not part of this Next.js app build)
+    "熱中症チェックシート/**",
   ]),
 ]);
 
