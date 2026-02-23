@@ -31,14 +31,6 @@ type Pattern = {
   items: CheckItem[];
 };
 
-type QrPrintMode =
-  | { type: "all" }
-  | {
-      type: "pattern";
-      patternId: string;
-      patternName: string;
-    };
-
 const MAX_PATTERNS = 5;
 const INITIAL_ITEMS_COUNT = 10;
 
@@ -94,7 +86,7 @@ export default function CheckItemSettingsPage() {
   const [saveMessage, setSaveMessage] = useState("");
   const [editingPatternId, setEditingPatternId] = useState<string | null>(null);
   const [editingPatternName, setEditingPatternName] = useState("");
-  const [qrPrintMode, setQrPrintMode] = useState<QrPrintMode | null>(null);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
 
   const temperatureOptions = useMemo(
     () => Array.from({ length: 61 }, (_, index) => (35 + index * 0.1).toFixed(1)),
@@ -104,16 +96,11 @@ export default function CheckItemSettingsPage() {
   const mlOptions = useMemo(() => Array.from({ length: 21 }, (_, index) => index * 50), []);
 
   const activePattern = patterns[activeTabIndex];
-
   const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const selectPageUrl = `${origin}/heatstroke_check/check-entry/select`;
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(selectPageUrl)}`;
 
-  const getPatternCheckUrl = (patternId: string) => `${origin}/heatstroke_check/check-entry?patternId=${patternId}`;
-  const getAllPatternsSelectUrl = () => `${origin}/heatstroke_check/check-entry/select`;
-
-  const getQrImageUrl = (value: string) =>
-    `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(value)}`;
-
-  const openPrintWindow = (title: string, blocks: Array<{ label: string; link: string }>) => {
+  const openPrintWindow = () => {
     const popup = window.open("", "_blank", "width=900,height=700");
     if (!popup) {
       return;
@@ -124,31 +111,22 @@ export default function CheckItemSettingsPage() {
       <html lang="ja">
       <head>
         <meta charset="utf-8" />
-        <title>${title}</title>
+        <title>全パターンQRコード印刷</title>
         <style>
           body { font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif; margin: 24px; }
           h1 { font-size: 24px; margin-bottom: 16px; }
-          .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
-          .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; text-align: center; }
+          .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; text-align: center; max-width: 360px; }
           .label { font-weight: 700; margin-bottom: 8px; }
           .url { font-size: 12px; color: #555; word-break: break-all; margin-top: 8px; }
           img { width: 220px; height: 220px; }
         </style>
       </head>
       <body>
-        <h1>${title}</h1>
-        <div class="grid">
-          ${blocks
-            .map(
-              (block) => `
-                <div class="card">
-                  <div class="label">${block.label}</div>
-                  <img src="${getQrImageUrl(block.link)}" alt="${block.label}" />
-                  <div class="url">${block.link}</div>
-                </div>
-              `,
-            )
-            .join("")}
+        <h1>全パターンQRコード印刷</h1>
+        <div class="card">
+          <div class="label">チェックパターン選択</div>
+          <img src="${qrImageUrl}" alt="チェックパターン選択QR" />
+          <div class="url">${selectPageUrl}</div>
         </div>
       </body>
       </html>
@@ -184,8 +162,7 @@ export default function CheckItemSettingsPage() {
       return;
     }
 
-    const ok = window.confirm("本当に削除しますか？");
-    if (!ok) {
+    if (!window.confirm("本当に削除しますか？")) {
       return;
     }
 
@@ -272,17 +249,6 @@ export default function CheckItemSettingsPage() {
     setSaveMessage("保存しました");
   };
 
-  const handlePrintAllPatternsQr = () => {
-    const selectUrl = getAllPatternsSelectUrl();
-    openPrintWindow("全パターンQRコード印刷", [{ label: "チェックパターン選択", link: selectUrl }]);
-  };
-
-  const handlePrintSinglePatternQr = (pattern: Pattern) => {
-    openPrintWindow("QRコード印刷", [
-      { label: pattern.name, link: getPatternCheckUrl(pattern.id) },
-    ]);
-  };
-
   return (
     <main className="app-page">
       <div className="app-container">
@@ -293,7 +259,7 @@ export default function CheckItemSettingsPage() {
           </p>
           <button
             type="button"
-            onClick={() => setQrPrintMode({ type: "all" })}
+            onClick={() => setIsQrModalOpen(true)}
             className="app-btn-outline mt-3 h-9 px-4"
           >
             <QrCode className="size-4" />
@@ -368,23 +334,6 @@ export default function CheckItemSettingsPage() {
                 ＋ パターン追加
               </button>
             )}
-          </div>
-
-          <div className="mt-3">
-            <button
-              type="button"
-              onClick={() =>
-                setQrPrintMode({
-                  type: "pattern",
-                  patternId: activePattern.id,
-                  patternName: activePattern.name,
-                })
-              }
-              className="app-btn-outline h-8 px-3 text-xs"
-            >
-              <QrCode className="size-3.5" />
-              QRコード印刷
-            </button>
           </div>
 
           <div className="mt-4 space-y-3">
@@ -713,16 +662,14 @@ export default function CheckItemSettingsPage() {
           </div>
         </div>
 
-        {qrPrintMode && (
+        {isQrModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
             <div className="w-full max-w-lg rounded-lg border bg-card p-5">
               <div className="flex items-start justify-between gap-3">
-                <h2 className="text-lg font-medium">
-                  {qrPrintMode.type === "all" ? "全パターンQRコード印刷" : "QRコード印刷"}
-                </h2>
+                <h2 className="text-lg font-medium">全パターンQRコード印刷</h2>
                 <button
                   type="button"
-                  onClick={() => setQrPrintMode(null)}
+                  onClick={() => setIsQrModalOpen(false)}
                   className="rounded p-1 text-muted-foreground hover:bg-accent"
                 >
                   <X className="size-4" />
@@ -730,47 +677,18 @@ export default function CheckItemSettingsPage() {
               </div>
 
               <div className="mt-4 rounded-md border bg-background p-4 text-center">
-                {qrPrintMode.type === "all" ? (
-                  <>
-                    <p className="text-sm font-medium">チェックパターン選択</p>
-                    <img
-                      src={getQrImageUrl(getAllPatternsSelectUrl())}
-                      alt="全パターンQRコード"
-                      className="mx-auto mt-3 h-52 w-52"
-                    />
-                    <p className="mt-3 break-all text-xs text-muted-foreground">{getAllPatternsSelectUrl()}</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium">{qrPrintMode.patternName}</p>
-                    <img
-                      src={getQrImageUrl(getPatternCheckUrl(qrPrintMode.patternId))}
-                      alt={`${qrPrintMode.patternName}のQRコード`}
-                      className="mx-auto mt-3 h-52 w-52"
-                    />
-                    <p className="mt-3 break-all text-xs text-muted-foreground">
-                      {getPatternCheckUrl(qrPrintMode.patternId)}
-                    </p>
-                  </>
-                )}
+                <p className="text-sm font-medium">チェックパターン選択</p>
+                <img src={qrImageUrl} alt="全パターンQRコード" className="mx-auto mt-3 h-52 w-52" />
+                <p className="mt-3 break-all text-xs text-muted-foreground">{selectPageUrl}</p>
               </div>
 
               <div className="mt-4 flex justify-end gap-2">
-                <button type="button" onClick={() => setQrPrintMode(null)} className="app-btn-outline">
+                <button type="button" onClick={() => setIsQrModalOpen(false)} className="app-btn-outline">
                   閉じる
                 </button>
                 <button
                   type="button"
-                  onClick={() => {
-                    if (qrPrintMode.type === "all") {
-                      handlePrintAllPatternsQr();
-                    } else {
-                      const target = patterns.find((pattern) => pattern.id === qrPrintMode.patternId);
-                      if (target) {
-                        handlePrintSinglePatternQr(target);
-                      }
-                    }
-                  }}
+                  onClick={openPrintWindow}
                   className="app-btn-primary"
                 >
                   印刷する
