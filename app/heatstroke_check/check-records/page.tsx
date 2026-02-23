@@ -29,7 +29,7 @@ type Selection = {
   pattern?: Pattern;
   dateLabel: string;
   day?: number;
-};
+} | null;
 
 type PatternDetail = {
   pattern: Pattern;
