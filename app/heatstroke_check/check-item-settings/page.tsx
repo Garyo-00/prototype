@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { Pencil, QrCode, X } from "lucide-react";
 
 type ResponseType = "free_text" | "single_choice" | "temperature" | "wbgt" | "ml";
 
@@ -30,6 +31,14 @@ type Pattern = {
   items: CheckItem[];
 };
 
+type QrPrintMode =
+  | { type: "all" }
+  | {
+      type: "pattern";
+      patternId: string;
+      patternName: string;
+    };
+
 const MAX_PATTERNS = 5;
 const INITIAL_ITEMS_COUNT = 10;
 
@@ -40,19 +49,6 @@ const RESPONSE_TYPE_LABELS: Record<ResponseType, string> = {
   wbgt: "選択式（WBGT値）",
   ml: "選択式（ml）",
 };
-
-function getWbgtLabel(value: number) {
-  if (value >= 31) {
-    return `${value}（危険）`;
-  }
-  if (value >= 28) {
-    return `${value}（厳重警戒）`;
-  }
-  if (value >= 25) {
-    return `${value}（警戒）`;
-  }
-  return String(value);
-}
 
 function generateId() {
   return Math.random().toString(36).slice(2, 10);
@@ -79,10 +75,26 @@ function createDefaultPattern(index: number): Pattern {
   };
 }
 
+function getWbgtLabel(value: number) {
+  if (value >= 31) {
+    return `${value}（危険）`;
+  }
+  if (value >= 28) {
+    return `${value}（厳重警戒）`;
+  }
+  if (value >= 25) {
+    return `${value}（警戒）`;
+  }
+  return String(value);
+}
+
 export default function CheckItemSettingsPage() {
   const [patterns, setPatterns] = useState<Pattern[]>([createDefaultPattern(0)]);
   const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [saveMessage, setSaveMessage] = useState("");
+  const [editingPatternId, setEditingPatternId] = useState<string | null>(null);
+  const [editingPatternName, setEditingPatternName] = useState("");
+  const [qrPrintMode, setQrPrintMode] = useState<QrPrintMode | null>(null);
 
   const temperatureOptions = useMemo(
     () => Array.from({ length: 61 }, (_, index) => (35 + index * 0.1).toFixed(1)),
@@ -92,6 +104,62 @@ export default function CheckItemSettingsPage() {
   const mlOptions = useMemo(() => Array.from({ length: 21 }, (_, index) => index * 50), []);
 
   const activePattern = patterns[activeTabIndex];
+
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+
+  const getPatternCheckUrl = (patternId: string) => `${origin}/heatstroke_check/check-entry?patternId=${patternId}`;
+  const getAllPatternsSelectUrl = () => `${origin}/heatstroke_check/check-entry/select`;
+
+  const getQrImageUrl = (value: string) =>
+    `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(value)}`;
+
+  const openPrintWindow = (title: string, blocks: Array<{ label: string; link: string }>) => {
+    const popup = window.open("", "_blank", "width=900,height=700");
+    if (!popup) {
+      return;
+    }
+
+    const html = `
+      <!doctype html>
+      <html lang="ja">
+      <head>
+        <meta charset="utf-8" />
+        <title>${title}</title>
+        <style>
+          body { font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif; margin: 24px; }
+          h1 { font-size: 24px; margin-bottom: 16px; }
+          .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+          .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; text-align: center; }
+          .label { font-weight: 700; margin-bottom: 8px; }
+          .url { font-size: 12px; color: #555; word-break: break-all; margin-top: 8px; }
+          img { width: 220px; height: 220px; }
+        </style>
+      </head>
+      <body>
+        <h1>${title}</h1>
+        <div class="grid">
+          ${blocks
+            .map(
+              (block) => `
+                <div class="card">
+                  <div class="label">${block.label}</div>
+                  <img src="${getQrImageUrl(block.link)}" alt="${block.label}" />
+                  <div class="url">${block.link}</div>
+                </div>
+              `,
+            )
+            .join("")}
+        </div>
+      </body>
+      </html>
+    `;
+
+    popup.document.open();
+    popup.document.write(html);
+    popup.document.close();
+    popup.focus();
+    setTimeout(() => popup.print(), 300);
+  };
 
   const setActivePatternItems = (updater: (items: CheckItem[]) => CheckItem[]) => {
     setPatterns((prev) =>
@@ -108,6 +176,53 @@ export default function CheckItemSettingsPage() {
     setPatterns((prev) => [...prev, createDefaultPattern(prev.length)]);
     setActiveTabIndex(patterns.length);
     setSaveMessage("");
+  };
+
+  const handleDeletePattern = (patternId: string, patternIndex: number) => {
+    if (patterns.length <= 1) {
+      window.alert("最後の1パターンは削除できません。");
+      return;
+    }
+
+    const ok = window.confirm("本当に削除しますか？");
+    if (!ok) {
+      return;
+    }
+
+    setPatterns((prev) => prev.filter((pattern) => pattern.id !== patternId));
+    setSaveMessage("");
+    setEditingPatternId(null);
+
+    setActiveTabIndex((current) => {
+      if (current === patternIndex) {
+        return Math.max(0, patternIndex - 1);
+      }
+      if (current > patternIndex) {
+        return current - 1;
+      }
+      return current;
+    });
+  };
+
+  const startPatternRename = (patternId: string, currentName: string) => {
+    setEditingPatternId(patternId);
+    setEditingPatternName(currentName);
+  };
+
+  const commitPatternRename = (patternId: string) => {
+    const nextName = editingPatternName.trim();
+    if (!nextName) {
+      setEditingPatternId(null);
+      setEditingPatternName("");
+      return;
+    }
+
+    setPatterns((prev) =>
+      prev.map((pattern) => (pattern.id === patternId ? { ...pattern, name: nextName } : pattern)),
+    );
+    setSaveMessage("");
+    setEditingPatternId(null);
+    setEditingPatternName("");
   };
 
   const handleAddItem = () => {
@@ -157,6 +272,17 @@ export default function CheckItemSettingsPage() {
     setSaveMessage("保存しました");
   };
 
+  const handlePrintAllPatternsQr = () => {
+    const selectUrl = getAllPatternsSelectUrl();
+    openPrintWindow("全パターンQRコード印刷", [{ label: "チェックパターン選択", link: selectUrl }]);
+  };
+
+  const handlePrintSinglePatternQr = (pattern: Pattern) => {
+    openPrintWindow("QRコード印刷", [
+      { label: pattern.name, link: getPatternCheckUrl(pattern.id) },
+    ]);
+  };
+
   return (
     <main className="app-page">
       <div className="app-container">
@@ -165,24 +291,75 @@ export default function CheckItemSettingsPage() {
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             ここで設定した項目は、ユーザーがQRコードを読み込んでチェックを実施する際に表示される内容になります。
           </p>
+          <button
+            type="button"
+            onClick={() => setQrPrintMode({ type: "all" })}
+            className="app-btn-outline mt-3 h-9 px-4"
+          >
+            <QrCode className="size-4" />
+            全パターンQRコード印刷
+          </button>
         </section>
 
         <section className="app-panel p-5">
           <div className="flex items-center gap-2">
-            <div className="flex h-9 flex-1 items-center gap-1 rounded-md bg-muted p-1">
+            <div className="flex h-10 flex-1 items-center gap-1 rounded-md bg-muted p-1">
               {patterns.map((pattern, index) => (
-                <button
+                <div
                   key={pattern.id}
-                  type="button"
-                  onClick={() => setActiveTabIndex(index)}
-                  className={`app-btn h-7 px-3 py-1 text-xs ${
-                    index === activeTabIndex
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:bg-background/70"
+                  className={`flex h-8 items-center rounded-md px-2 ${
+                    index === activeTabIndex ? "bg-background shadow-sm" : ""
                   }`}
                 >
-                  {pattern.name}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTabIndex(index)}
+                    className={`text-xs ${
+                      index === activeTabIndex
+                        ? "text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {editingPatternId === pattern.id ? (
+                      <input
+                        value={editingPatternName}
+                        autoFocus
+                        onChange={(event) => setEditingPatternName(event.target.value)}
+                        onBlur={() => commitPatternRename(pattern.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter") {
+                            commitPatternRename(pattern.id);
+                          }
+                          if (event.key === "Escape") {
+                            setEditingPatternId(null);
+                            setEditingPatternName("");
+                          }
+                        }}
+                        className="h-6 w-24 rounded border bg-input-background px-2 text-xs"
+                      />
+                    ) : (
+                      pattern.name
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => startPatternRename(pattern.id, pattern.name)}
+                    className="ml-1 rounded p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+                    aria-label="パターン名を編集"
+                  >
+                    <Pencil className="size-3.5" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePattern(pattern.id, index)}
+                    className="rounded p-1 text-muted-foreground hover:bg-accent hover:text-destructive"
+                    aria-label="パターンを削除"
+                  >
+                    <X className="size-3.5" />
+                  </button>
+                </div>
               ))}
             </div>
 
@@ -191,6 +368,23 @@ export default function CheckItemSettingsPage() {
                 ＋ パターン追加
               </button>
             )}
+          </div>
+
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() =>
+                setQrPrintMode({
+                  type: "pattern",
+                  patternId: activePattern.id,
+                  patternName: activePattern.name,
+                })
+              }
+              className="app-btn-outline h-8 px-3 text-xs"
+            >
+              <QrCode className="size-3.5" />
+              QRコード印刷
+            </button>
           </div>
 
           <div className="mt-4 space-y-3">
@@ -518,6 +712,73 @@ export default function CheckItemSettingsPage() {
             </button>
           </div>
         </div>
+
+        {qrPrintMode && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+            <div className="w-full max-w-lg rounded-lg border bg-card p-5">
+              <div className="flex items-start justify-between gap-3">
+                <h2 className="text-lg font-medium">
+                  {qrPrintMode.type === "all" ? "全パターンQRコード印刷" : "QRコード印刷"}
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setQrPrintMode(null)}
+                  className="rounded p-1 text-muted-foreground hover:bg-accent"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+
+              <div className="mt-4 rounded-md border bg-background p-4 text-center">
+                {qrPrintMode.type === "all" ? (
+                  <>
+                    <p className="text-sm font-medium">チェックパターン選択</p>
+                    <img
+                      src={getQrImageUrl(getAllPatternsSelectUrl())}
+                      alt="全パターンQRコード"
+                      className="mx-auto mt-3 h-52 w-52"
+                    />
+                    <p className="mt-3 break-all text-xs text-muted-foreground">{getAllPatternsSelectUrl()}</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium">{qrPrintMode.patternName}</p>
+                    <img
+                      src={getQrImageUrl(getPatternCheckUrl(qrPrintMode.patternId))}
+                      alt={`${qrPrintMode.patternName}のQRコード`}
+                      className="mx-auto mt-3 h-52 w-52"
+                    />
+                    <p className="mt-3 break-all text-xs text-muted-foreground">
+                      {getPatternCheckUrl(qrPrintMode.patternId)}
+                    </p>
+                  </>
+                )}
+              </div>
+
+              <div className="mt-4 flex justify-end gap-2">
+                <button type="button" onClick={() => setQrPrintMode(null)} className="app-btn-outline">
+                  閉じる
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (qrPrintMode.type === "all") {
+                      handlePrintAllPatternsQr();
+                    } else {
+                      const target = patterns.find((pattern) => pattern.id === qrPrintMode.patternId);
+                      if (target) {
+                        handlePrintSinglePatternQr(target);
+                      }
+                    }
+                  }}
+                  className="app-btn-primary"
+                >
+                  印刷する
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );
