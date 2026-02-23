@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-type ResponseType = "free_text" | "single_choice" | "temperature" | "numeric";
+type ResponseType = "free_text" | "single_choice" | "temperature" | "wbgt" | "ml";
 
 type NormalValue =
   | {
@@ -37,8 +37,22 @@ const RESPONSE_TYPE_LABELS: Record<ResponseType, string> = {
   free_text: "自由記述",
   single_choice: "選択式（単数）",
   temperature: "選択式（体温）",
-  numeric: "選択式（数値）",
+  wbgt: "選択式（WBGT値）",
+  ml: "選択式（ml）",
 };
+
+function getWbgtLabel(value: number) {
+  if (value >= 31) {
+    return `${value}（危険）`;
+  }
+  if (value >= 28) {
+    return `${value}（厳重警戒）`;
+  }
+  if (value >= 25) {
+    return `${value}（警戒）`;
+  }
+  return String(value);
+}
 
 function generateId() {
   return Math.random().toString(36).slice(2, 10);
@@ -74,7 +88,8 @@ export default function CheckItemSettingsPage() {
     () => Array.from({ length: 61 }, (_, index) => (35 + index * 0.1).toFixed(1)),
     [],
   );
-  const numericOptions = useMemo(() => Array.from({ length: 101 }, (_, index) => String(index)), []);
+  const wbgtOptions = useMemo(() => Array.from({ length: 30 }, (_, index) => 15 + index), []);
+  const mlOptions = useMemo(() => Array.from({ length: 21 }, (_, index) => index * 50), []);
 
   const activePattern = patterns[activeTabIndex];
 
@@ -121,7 +136,7 @@ export default function CheckItemSettingsPage() {
         normalValue: { kind: "single_choice", selectedOption: "" },
       };
     }
-    if (responseType === "temperature" || responseType === "numeric") {
+    if (responseType === "temperature" || responseType === "wbgt" || responseType === "ml") {
       return {
         ...item,
         responseType,
@@ -368,9 +383,9 @@ export default function CheckItemSettingsPage() {
                     </div>
                   )}
 
-                  {item.responseType === "numeric" && (
+                  {item.responseType === "wbgt" && (
                     <div className="mt-4 rounded-md border bg-card p-3">
-                      <p className="text-sm text-muted-foreground">回答候補: 0 から 100 まで</p>
+                      <p className="text-sm text-muted-foreground">回答候補: 15 から 44 まで</p>
                       <div className="mt-3 grid gap-3 md:grid-cols-2">
                         <label className="text-sm">
                           <span className="mb-1 block text-muted-foreground">正常値（以上）</span>
@@ -389,9 +404,9 @@ export default function CheckItemSettingsPage() {
                             className="app-select"
                           >
                             <option value="">未設定</option>
-                            {numericOptions.map((value) => (
-                              <option key={`${item.id}-num-min-${value}`} value={value}>
-                                {value}以上
+                            {wbgtOptions.map((value) => (
+                              <option key={`${item.id}-wbgt-min-${value}`} value={String(value)}>
+                                {getWbgtLabel(value)}以上
                               </option>
                             ))}
                           </select>
@@ -414,9 +429,66 @@ export default function CheckItemSettingsPage() {
                             className="app-select"
                           >
                             <option value="">未設定</option>
-                            {numericOptions.map((value) => (
-                              <option key={`${item.id}-num-max-${value}`} value={value}>
-                                {value}以下
+                            {wbgtOptions.map((value) => (
+                              <option key={`${item.id}-wbgt-max-${value}`} value={String(value)}>
+                                {getWbgtLabel(value)}以下
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+                  )}
+
+                  {item.responseType === "ml" && (
+                    <div className="mt-4 rounded-md border bg-card p-3">
+                      <p className="text-sm text-muted-foreground">回答候補: 0 から 1000ml まで（50ml刻み）</p>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <label className="text-sm">
+                          <span className="mb-1 block text-muted-foreground">正常値（以上）</span>
+                          <select
+                            value={item.normalValue?.kind === "range" ? item.normalValue.min : ""}
+                            onChange={(event) =>
+                              handleUpdateItem(item.id, (current) => ({
+                                ...current,
+                                normalValue: {
+                                  kind: "range",
+                                  min: event.target.value,
+                                  max: current.normalValue?.kind === "range" ? current.normalValue.max : "",
+                                },
+                              }))
+                            }
+                            className="app-select"
+                          >
+                            <option value="">未設定</option>
+                            {mlOptions.map((value) => (
+                              <option key={`${item.id}-ml-min-${value}`} value={String(value)}>
+                                {value}ml以上
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="text-sm">
+                          <span className="mb-1 block text-muted-foreground">正常値（以下）</span>
+                          <select
+                            value={item.normalValue?.kind === "range" ? item.normalValue.max : ""}
+                            onChange={(event) =>
+                              handleUpdateItem(item.id, (current) => ({
+                                ...current,
+                                normalValue: {
+                                  kind: "range",
+                                  min: current.normalValue?.kind === "range" ? current.normalValue.min : "",
+                                  max: event.target.value,
+                                },
+                              }))
+                            }
+                            className="app-select"
+                          >
+                            <option value="">未設定</option>
+                            {mlOptions.map((value) => (
+                              <option key={`${item.id}-ml-max-${value}`} value={String(value)}>
+                                {value}ml以下
                               </option>
                             ))}
                           </select>
