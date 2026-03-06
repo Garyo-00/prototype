@@ -254,9 +254,6 @@ export default function CheckItemSettingsPage() {
       <div className="app-container">
         <section className="mb-6">
           <h1 className="text-3xl tracking-tight">熱中症チェックシート マスター作成</h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            ここで設定した項目は、ユーザーがQRコードを読み込んでチェックを実施する際に表示される内容になります。
-          </p>
           <button
             type="button"
             onClick={() => setIsQrModalOpen(true)}
